@@ -1,0 +1,7 @@
+.venv/
+data/
+organized_dataset/
+prediction_result/
+runs/
+yolo_training_results/
+__pycache__/
