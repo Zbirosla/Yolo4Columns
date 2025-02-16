@@ -7,6 +7,9 @@ import imageio
 import json
 import math
 import cv2
+import os
+import multiprocessing
+from functools import partial
 
 
 def load_profiles(filename):
@@ -534,9 +537,41 @@ def add_columns(grid, size_A_range, size_B_range, number_range, filename, rotati
     return grid, column_positions
 
 
-if __name__ == "__main__":
+
+
+def generate_sample(i, output_dir, grid_size, wall_length_range, wall_width_range, min_distance,
+                    num_walls_range, num_diagonal_walls_range, diagonal_wall_length_range, noise_level,
+                    column_size_range, number_of_columns, rotation_probability, steel_profiles_file):
+    filename = f"{output_dir}grid_with_mask_{i:04d}.{{fileformat}}"
+
+    # Add random walls to the grid
+    grid_with_walls, _ = add_random_walls_with_variable_width(
+        grid_size, wall_length_range, wall_width_range, min_distance,
+        num_walls_range, num_diagonal_walls_range, diagonal_wall_length_range
+    )
+
+    # Add noise into the grid
+    grid_with_walls = add_noise(grid_with_walls, noise_level, cluster_count=150, max_cluster_size=5)
+
+    # Add columns and get COCO annotations
+    grid_with_columns, _ = add_columns(grid_with_walls, column_size_range, column_size_range,
+                                       number_of_columns, filename, rotation_probability,
+                                       steel_profiles_file)
+
+    # Save the grid as image
+    plot_grid(grid_with_columns, grid_size, filename, i, save_pdf=False)
+
+    return filename.format(fileformat="json")
+
+
+def main():
+    os.makedirs("data", exist_ok=True)
+    num_samples = 20  # Number of grids to generate
+    output_dir = "data/"
+    master_json_path = output_dir + "master_annotations.json"
+    steel_profiles_file = "steel_profiles.json"
+
     # Dataset parameters
-    num_samples = 10 # Number of grids to generate
     grid_size = (512, 512)
     wall_length_range = (150, 512)
     wall_width_range = (2, 13)
@@ -547,50 +582,47 @@ if __name__ == "__main__":
     noise_level = 0.05  # Noise level must be between 0.0 and 1.0
     column_size_range = (10, 35)
     number_of_columns = (1, 5)
-    rotation_probability = 0.5
-    output_dir = "data/"
-    master_json_path = output_dir + "master_annotations.json"
+    rotation_probability = 0.35
 
-    # Initialize master COCO structure
+
+    num_processors = multiprocessing.cpu_count()
+    use_multiprocessing = num_processors > 1
+
+    if use_multiprocessing:
+        with multiprocessing.Pool(processes=num_processors) as pool:
+            json_files = pool.map(partial(generate_sample, output_dir=output_dir, grid_size=grid_size,
+                                          wall_length_range=wall_length_range, wall_width_range=wall_width_range,
+                                          min_distance=min_distance, num_walls_range=num_walls_range,
+                                          num_diagonal_walls_range=num_diagonal_walls_range,
+                                          diagonal_wall_length_range=diagonal_wall_length_range,
+                                          noise_level=noise_level,
+                                          column_size_range=column_size_range, number_of_columns=number_of_columns,
+                                          rotation_probability=rotation_probability,
+                                          steel_profiles_file=steel_profiles_file), range(num_samples))
+    else:
+        json_files = [generate_sample(i, output_dir, grid_size, wall_length_range, wall_width_range, min_distance,
+                                      num_walls_range, num_diagonal_walls_range, diagonal_wall_length_range,
+                                      noise_level,
+                                      column_size_range, number_of_columns, rotation_probability, steel_profiles_file)
+                      for i in range(num_samples)]
+
+    # Merge all JSON annotations into a master file
     master_coco = {
         "images": [],
         "annotations": [],
         "categories": [
             {"id": 0, "name": "rect"},
-            {"id": 1, "name": "round"}
+            {"id": 1, "name": "round"},
+            {"id": 2, "name": "steel"}
         ]
     }
 
-    annotation_id = 1  # Start annotation ID from 1
-    image_id = 1       # Start image ID from 1
+    annotation_id = 1
+    image_id = 1
+    for json_file in json_files:
+        with open(json_file, "r") as f:
+            coco_data = json.load(f)
 
-    for i in range(num_samples):
-        # Generate unique filename for each grid
-        filename = f"{output_dir}grid_with_mask_{i:04d}.{{fileformat}}"
-
-        # Add random walls to the grid
-        grid_with_walls, walls_position = add_random_walls_with_variable_width(
-            grid_size, wall_length_range, wall_width_range, min_distance,
-            num_walls_range, num_diagonal_walls_range, diagonal_wall_length_range
-        )
-
-        # Add noise into the grid
-        grid_with_walls = add_noise(grid_with_walls, noise_level, cluster_count=150, max_cluster_size=5)
-
-        # Add columns and get COCO annotations
-        grid_with_columns, column_positions = add_columns(grid_with_walls, column_size_range, column_size_range,
-                                                          number_of_columns, filename, rotation_probability,
-                                                          steel_profiles_file= "steel_profiles.json"
-                                                          )
-
-        # Save the grid as image and PDF
-        plot_grid(grid_with_columns, grid_size, filename,i,save_pdf=False)
-
-        # Update master COCO JSON
-        with open(filename.format(fileformat="json"), "r") as json_file:
-            coco_data = json.load(json_file)
-
-        # Update image and annotation IDs for the master JSON
         for image in coco_data["images"]:
             image["id"] = image_id
             master_coco["images"].append(image)
@@ -603,8 +635,10 @@ if __name__ == "__main__":
 
         image_id += 1
 
-    # Save the master JSON
     with open(master_json_path, "w") as master_json_file:
         json.dump(master_coco, master_json_file, indent=4)
 
     print(f"Dataset created with {num_samples} samples. Annotations saved to {master_json_path}.")
+
+if __name__ == "__main__":
+    main()

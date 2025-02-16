@@ -5,3 +5,4 @@ prediction_result/
 runs/
 yolo_training_results/
 __pycache__/
+/test_inputs/
