@@ -214,12 +214,10 @@ def create_wall(ax, grid, start_x, start_y, length, width, orientation=None, col
             ax.add_patch(rect)
 
 
-def add_random_walls_with_variable_width(grid_size, wall_length_range, wall_width_range, min_distance,
-                                         num_walls_range, num_diagonal_walls_range,
-                                         diagonal_wall_length_range):
-
+def add_random_walls_with_variable_width(grid_size, wall_length_range, wall_width_range,
+                                         min_distance,num_walls_range):
     rows, cols = grid_size
-    grid = np.ones((rows, cols))  # Initialize grid with 1 (white cells)
+    grid = np.ones((rows, cols))  # Initialize grid with ones (white cells)
 
     # List to store all wall information
     existing_wall_positions = []
@@ -320,36 +318,10 @@ def add_random_walls_with_variable_width(grid_size, wall_length_range, wall_widt
                         wall_created = True
                         print('Not able to place the requested number of walls.')
 
-    ''' # Generate diagonal walls
-    num_diagonal_walls = np.random.randint(*num_diagonal_walls_range)
-
-    for _ in range(num_diagonal_walls):
-        if existing_wall_positions:
-            connect_point = random.choice([wall["start"] for wall in existing_wall_positions
-                                           if wall["type"] in ["horizontal", "vertical"]])
-            start_x, start_y = connect_point
-
-            direction_x = random.choice([-1, 1])
-            direction_y = random.choice([-1, 1])
-
-            diagonal_length = random.randint(*diagonal_wall_length_range)
-            end_x = start_x + diagonal_length * direction_x
-            end_y = start_y + diagonal_length * direction_y
-
-            if 0 <= end_x <= cols and 0 <= end_y <= rows:
-                create_wall(None, grid, start_x, start_y, diagonal_length, random.randint(*wall_width_range),
-                            diagonal=True)
-                existing_wall_positions.append({
-                    "type": "diagonal",
-                    "start": (start_x, start_y),
-                    "end": (end_x, end_y),
-                    "width": random.randint(*wall_width_range)
-                })'''
-
     return grid, existing_wall_positions
 
 
-def add_columns(grid, size_A_range, size_B_range, number_range, filename, rotation_probability, steel_profiles_file):
+def add_columns(grid, size_a_range, size_b_range, number_range, filename, rotation_probability, steel_profiles_file):
     rows, cols = grid.shape
     column_positions = []
     number = random.randint(number_range[0], number_range[1])
@@ -397,8 +369,8 @@ def add_columns(grid, size_A_range, size_B_range, number_range, filename, rotati
 
         if shape in ["rect", "round"]:
             # Generate random sizes.
-            size_A = random.randint(size_A_range[0], size_A_range[1])
-            size_B = random.randint(size_B_range[0], size_B_range[1])
+            size_A = random.randint(size_a_range[0], size_a_range[1])
+            size_B = random.randint(size_b_range[0], size_b_range[1])
 
             place_in_corner = random.choice([True, False])
             if place_in_corner:
@@ -545,18 +517,15 @@ def generate_sample(i, output_dir, grid_size, wall_length_range, wall_width_rang
     filename = f"{output_dir}grid_with_mask_{i:04d}.{{fileformat}}"
 
     # Add random walls to the grid
-    grid_with_walls, _ = add_random_walls_with_variable_width(
-        grid_size, wall_length_range, wall_width_range, min_distance,
-        num_walls_range, num_diagonal_walls_range, diagonal_wall_length_range
-    )
+    grid_with_walls, _ = add_random_walls_with_variable_width(grid_size, wall_length_range, wall_width_range,
+                                                              min_distance, num_walls_range)
 
     # Add noise into the grid
     grid_with_walls = add_noise(grid_with_walls, noise_level, cluster_count=150, max_cluster_size=5)
 
     # Add columns and get COCO annotations
-    grid_with_columns, _ = add_columns(grid_with_walls, column_size_range, column_size_range,
-                                       number_of_columns, filename, rotation_probability,
-                                       steel_profiles_file)
+    grid_with_columns, _ = add_columns(grid_with_walls, column_size_range, column_size_range, number_of_columns,
+                                       filename, rotation_probability, steel_profiles_file)
 
     # Save the grid as image
     plot_grid(grid_with_columns, grid_size, filename, i, save_pdf=False)
@@ -566,7 +535,7 @@ def generate_sample(i, output_dir, grid_size, wall_length_range, wall_width_rang
 
 def main():
     os.makedirs("data", exist_ok=True)
-    num_samples = 20  # Number of grids to generate
+    num_samples = 2000  # Number of grids to generate
     output_dir = "data/"
     master_json_path = output_dir + "master_annotations.json"
     steel_profiles_file = "steel_profiles.json"
